@@ -5,11 +5,14 @@ import plotly.graph_objects as go
 import json
 import io
 from datetime import datetime
+from sqlalchemy.orm import Session
+from database import SessionLocal, init_db, Animal
 
 st.set_page_config(page_title="Classificação Taxonômica de Animais", layout="wide", page_icon="🦁")
 
-@st.cache_data
-def load_initial_data():
+init_db()
+
+def get_initial_animal_data():
     dados_csv = {
         'Nome_Popular': [
             'Onça-Pintada', 'Elefante-Africano', 'Baleia-Jubarte', 'Águia-Americana', 
@@ -116,11 +119,58 @@ def load_initial_data():
     
     return pd.DataFrame(dados_csv)
 
-if 'df' not in st.session_state:
-    st.session_state.df = load_initial_data()
+def migrate_initial_data():
+    db = SessionLocal()
+    try:
+        count = db.query(Animal).count()
+        if count == 0:
+            df = get_initial_animal_data()
+            for _, row in df.iterrows():
+                animal = Animal(
+                    nome_popular=row['Nome_Popular'],
+                    nome_cientifico=row['Nome_Cientifico'],
+                    reino=row['Reino'],
+                    filo=row['Filo'],
+                    classe=row['Classe'],
+                    ordem=row['Ordem'],
+                    familia=row['Familia'],
+                    genero=row['Genero'],
+                    especie=row['Especie']
+                )
+                db.add(animal)
+            db.commit()
+    finally:
+        db.close()
+
+def load_animals_from_db():
+    db = SessionLocal()
+    try:
+        animals = db.query(Animal).all()
+        data = []
+        for animal in animals:
+            data.append({
+                'Nome_Popular': animal.nome_popular,
+                'Nome_Cientifico': animal.nome_cientifico,
+                'Reino': animal.reino,
+                'Filo': animal.filo,
+                'Classe': animal.classe,
+                'Ordem': animal.ordem,
+                'Familia': animal.familia,
+                'Genero': animal.genero,
+                'Especie': animal.especie,
+                'Conservation_Status': animal.conservation_status,
+                'Image_URL': animal.image_url
+            })
+        return pd.DataFrame(data)
+    finally:
+        db.close()
+
+migrate_initial_data()
 
 st.title("🦁 Sistema de Classificação Taxonômica de Animais")
 st.markdown("**Explore, analise e gerencie dados taxonômicos de forma interativa**")
+
+df = load_animals_from_db()
 
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📊 Dados Completos", 
@@ -133,9 +183,9 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 
 with tab1:
     st.header("Base de Dados Completa")
-    st.markdown(f"**Total de espécies catalogadas:** {len(st.session_state.df)}")
+    st.markdown(f"**Total de espécies catalogadas:** {len(df)}")
     
-    st.dataframe(st.session_state.df, use_container_width=True, height=400)
+    st.dataframe(df, use_container_width=True, height=400)
     
     st.subheader("📥 Exportar Dados")
     
@@ -143,7 +193,7 @@ with tab1:
     
     with col1:
         st.markdown("**Selecionar Colunas para Exportar:**")
-        all_columns = st.session_state.df.columns.tolist()
+        all_columns = df.columns.tolist()
         selected_columns = st.multiselect(
             "Colunas", 
             all_columns, 
@@ -152,7 +202,7 @@ with tab1:
         )
     
     if selected_columns:
-        export_df = st.session_state.df[selected_columns]
+        export_df = df[selected_columns]
         
         col_csv, col_json, col_excel = st.columns(3)
         
@@ -208,29 +258,29 @@ with tab2:
     filter_cols = st.columns(4)
     
     with filter_cols[0]:
-        reino_filter = st.multiselect("Reino", st.session_state.df['Reino'].unique())
+        reino_filter = st.multiselect("Reino", df['Reino'].unique())
     
     with filter_cols[1]:
-        filo_filter = st.multiselect("Filo", st.session_state.df['Filo'].unique())
+        filo_filter = st.multiselect("Filo", df['Filo'].unique())
     
     with filter_cols[2]:
-        classe_filter = st.multiselect("Classe", st.session_state.df['Classe'].unique())
+        classe_filter = st.multiselect("Classe", df['Classe'].unique())
     
     with filter_cols[3]:
-        ordem_filter = st.multiselect("Ordem", st.session_state.df['Ordem'].unique())
+        ordem_filter = st.multiselect("Ordem", df['Ordem'].unique())
     
     filter_cols2 = st.columns(3)
     
     with filter_cols2[0]:
-        familia_filter = st.multiselect("Família", st.session_state.df['Familia'].unique())
+        familia_filter = st.multiselect("Família", df['Familia'].unique())
     
     with filter_cols2[1]:
-        genero_filter = st.multiselect("Gênero", st.session_state.df['Genero'].unique())
+        genero_filter = st.multiselect("Gênero", df['Genero'].unique())
     
     with filter_cols2[2]:
-        especie_filter = st.multiselect("Espécie", st.session_state.df['Especie'].unique())
+        especie_filter = st.multiselect("Espécie", df['Especie'].unique())
     
-    filtered_df = st.session_state.df.copy()
+    filtered_df = df.copy()
     
     if search_term:
         if search_column == "Todos":
@@ -269,16 +319,16 @@ with tab3:
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.metric("Total de Espécies", len(st.session_state.df))
+        st.metric("Total de Espécies", len(df))
     
     with col2:
-        st.metric("Total de Filos", st.session_state.df['Filo'].nunique())
+        st.metric("Total de Filos", df['Filo'].nunique())
     
     with col3:
-        st.metric("Total de Classes", st.session_state.df['Classe'].nunique())
+        st.metric("Total de Classes", df['Classe'].nunique())
     
     with col4:
-        st.metric("Total de Famílias", st.session_state.df['Familia'].nunique())
+        st.metric("Total de Famílias", df['Familia'].nunique())
     
     st.divider()
     
@@ -289,9 +339,9 @@ with tab3:
         ["Filo", "Classe", "Ordem", "Familia", "Genero"]
     )
     
-    distribution = st.session_state.df[taxonomy_level].value_counts().reset_index()
+    distribution = df[taxonomy_level].value_counts().reset_index()
     distribution.columns = [taxonomy_level, 'Contagem']
-    distribution['Percentual'] = (distribution['Contagem'] / len(st.session_state.df) * 100).round(2)
+    distribution['Percentual'] = (distribution['Contagem'] / len(df) * 100).round(2)
     
     col1, col2 = st.columns([2, 1])
     
@@ -316,7 +366,7 @@ with tab4:
     )
     
     if viz_type == "Gráfico de Barras - Distribuição por Classe":
-        classe_counts = st.session_state.df['Classe'].value_counts().reset_index()
+        classe_counts = df['Classe'].value_counts().reset_index()
         classe_counts.columns = ['Classe', 'Contagem']
         
         fig = px.bar(
@@ -332,7 +382,7 @@ with tab4:
         st.plotly_chart(fig, use_container_width=True)
     
     elif viz_type == "Gráfico de Pizza - Distribuição por Filo":
-        filo_counts = st.session_state.df['Filo'].value_counts().reset_index()
+        filo_counts = df['Filo'].value_counts().reset_index()
         filo_counts.columns = ['Filo', 'Contagem']
         
         fig = px.pie(
@@ -346,7 +396,7 @@ with tab4:
         st.plotly_chart(fig, use_container_width=True)
     
     elif viz_type == "Gráfico de Barras - Top 10 Famílias":
-        familia_counts = st.session_state.df['Familia'].value_counts().head(10).reset_index()
+        familia_counts = df['Familia'].value_counts().head(10).reset_index()
         familia_counts.columns = ['Familia', 'Contagem']
         
         fig = px.bar(
@@ -362,7 +412,7 @@ with tab4:
         st.plotly_chart(fig, use_container_width=True)
     
     elif viz_type == "Gráfico de Barras Horizontais - Distribuição por Ordem":
-        ordem_counts = st.session_state.df['Ordem'].value_counts().reset_index()
+        ordem_counts = df['Ordem'].value_counts().reset_index()
         ordem_counts.columns = ['Ordem', 'Contagem']
         
         fig = px.bar(
@@ -380,7 +430,7 @@ with tab4:
     
     elif viz_type == "Sunburst - Hierarquia Taxonômica":
         fig = px.sunburst(
-            st.session_state.df,
+            df,
             path=['Filo', 'Classe', 'Ordem', 'Familia'],
             title='Hierarquia Taxonômica (Filo → Classe → Ordem → Família)',
             height=700
@@ -392,10 +442,10 @@ with tab5:
     
     st.subheader("Verificação de Integridade")
     
-    missing_data = st.session_state.df.isnull().sum()
-    duplicate_rows = st.session_state.df.duplicated().sum()
-    duplicate_names = st.session_state.df['Nome_Popular'].duplicated().sum()
-    duplicate_scientific = st.session_state.df['Nome_Cientifico'].duplicated().sum()
+    missing_data = df.isnull().sum()
+    duplicate_rows = df.duplicated().sum()
+    duplicate_names = df['Nome_Popular'].duplicated().sum()
+    duplicate_scientific = df['Nome_Cientifico'].duplicated().sum()
     
     col1, col2, col3, col4 = st.columns(4)
     
@@ -436,17 +486,17 @@ with tab5:
     
     if duplicate_rows > 0:
         st.subheader("Linhas Duplicadas")
-        duplicated_df = st.session_state.df[st.session_state.df.duplicated(keep=False)]
+        duplicated_df = df[df.duplicated(keep=False)]
         st.dataframe(duplicated_df, use_container_width=True)
     
     if duplicate_names > 0:
         st.subheader("Nomes Populares Duplicados")
-        dup_names = st.session_state.df[st.session_state.df['Nome_Popular'].duplicated(keep=False)]
+        dup_names = df[df['Nome_Popular'].duplicated(keep=False)]
         st.dataframe(dup_names[['Nome_Popular', 'Nome_Cientifico', 'Classe']], use_container_width=True)
     
     if duplicate_scientific > 0:
         st.subheader("Nomes Científicos Duplicados")
-        dup_sci = st.session_state.df[st.session_state.df['Nome_Cientifico'].duplicated(keep=False)]
+        dup_sci = df[df['Nome_Cientifico'].duplicated(keep=False)]
         st.dataframe(dup_sci[['Nome_Popular', 'Nome_Cientifico', 'Classe']], use_container_width=True)
     
     st.divider()
@@ -455,10 +505,10 @@ with tab5:
     consistency_checks = []
     
     for col in ['Reino', 'Filo', 'Classe', 'Ordem', 'Familia', 'Genero', 'Especie']:
-        empty_count = st.session_state.df[col].isna().sum()
+        empty_count = df[col].isna().sum()
         consistency_checks.append({
             'Nível': col,
-            'Valores Únicos': st.session_state.df[col].nunique(),
+            'Valores Únicos': df[col].nunique(),
             'Campos Vazios': empty_count,
             'Status': '✅ OK' if empty_count == 0 else '❌ Problema'
         })
@@ -478,7 +528,7 @@ with tab5:
     
     hierarchy_issues = []
     
-    for idx, row in st.session_state.df.iterrows():
+    for idx, row in df.iterrows():
         filo = row['Filo']
         classe = row['Classe']
         
@@ -493,7 +543,7 @@ with tab5:
                 })
     
     scientific_name_issues = []
-    for idx, row in st.session_state.df.iterrows():
+    for idx, row in df.iterrows():
         genero = row['Genero']
         especie = row['Especie']
         nome_cientifico = row['Nome_Cientifico']
@@ -511,7 +561,7 @@ with tab5:
     
     with col1:
         if len(hierarchy_issues) == 0:
-            st.success(f"✅ Todas as hierarquias Filo-Classe estão consistentes ({len(st.session_state.df)} registros verificados)")
+            st.success(f"✅ Todas as hierarquias Filo-Classe estão consistentes ({len(df)} registros verificados)")
         else:
             st.warning(f"⚠️ {len(hierarchy_issues)} inconsistências de hierarquia encontradas")
     
@@ -579,36 +629,48 @@ with tab6:
             if not especie:
                 errors.append("Espécie é obrigatória")
             
-            if nome_popular in st.session_state.df['Nome_Popular'].values:
-                errors.append(f"Animal '{nome_popular}' já existe na base de dados")
-            
-            if nome_cientifico in st.session_state.df['Nome_Cientifico'].values:
-                errors.append(f"Nome científico '{nome_cientifico}' já existe na base de dados")
+            db = SessionLocal()
+            try:
+                if db.query(Animal).filter(Animal.nome_popular == nome_popular).first():
+                    errors.append(f"Animal '{nome_popular}' já existe na base de dados")
+                
+                if db.query(Animal).filter(Animal.nome_cientifico == nome_cientifico).first():
+                    errors.append(f"Nome científico '{nome_cientifico}' já existe na base de dados")
+            finally:
+                db.close()
             
             if errors:
                 for error in errors:
                     st.error(f"❌ {error}")
             else:
-                new_row = pd.DataFrame({
-                    'Nome_Popular': [nome_popular],
-                    'Nome_Cientifico': [nome_cientifico],
-                    'Reino': [reino],
-                    'Filo': [filo],
-                    'Classe': [classe],
-                    'Ordem': [ordem],
-                    'Familia': [familia],
-                    'Genero': [genero],
-                    'Especie': [especie]
-                })
-                
-                st.session_state.df = pd.concat([st.session_state.df, new_row], ignore_index=True)
-                st.success(f"✅ Animal '{nome_popular}' ({nome_cientifico}) adicionado com sucesso!")
-                st.balloons()
-                st.rerun()
+                db = SessionLocal()
+                try:
+                    new_animal = Animal(
+                        nome_popular=nome_popular,
+                        nome_cientifico=nome_cientifico,
+                        reino=reino,
+                        filo=filo,
+                        classe=classe,
+                        ordem=ordem,
+                        familia=familia,
+                        genero=genero,
+                        especie=especie
+                    )
+                    db.add(new_animal)
+                    db.commit()
+                    st.success(f"✅ Animal '{nome_popular}' ({nome_cientifico}) adicionado com sucesso!")
+                    st.balloons()
+                    st.rerun()
+                except Exception as e:
+                    db.rollback()
+                    st.error(f"❌ Erro ao adicionar animal: {str(e)}")
+                finally:
+                    db.close()
     
     st.divider()
     st.subheader("Animais Recentemente Adicionados")
-    st.dataframe(st.session_state.df.tail(10), use_container_width=True)
+    recent_df = load_animals_from_db()
+    st.dataframe(recent_df.tail(10), use_container_width=True)
 
 st.divider()
-st.caption("🦁 Sistema de Classificação Taxonomica :D")
+st.caption("🦁 Sistema de Classificação Taxonômica - Desenvolvido com Streamlit")
